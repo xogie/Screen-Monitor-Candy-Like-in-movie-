@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NORAD // STRATCOM SURVEILLANCE TERMINAL</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+<style>
+/* =====================================================
+   CORE VARIABLES
+===================================================== */
+:root {
+    --bg: #020406;
+    --green: #4af626; /* Phosphor Green */
+    --green-dim: rgba(74, 246, 38, 0.3);
+    --dim: #1a5c0d;
+    --alert: #ff3333;
+    --font: "Share Tech Mono", monospace;
+    --scanline: rgba(0, 0, 0, 0.5);
+}
+
+/* RESET */
+* { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+
+html, body {
+    width: 100%; height: 100%;
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--green);
+    overflow: hidden;
+    cursor: none; /* Hide default cursor for custom crosshair */
+    text-transform: uppercase;
+}
+
+/* =====================================================
+   CRT & SCREEN EFFECTS
+===================================================== */
+
+/* RGB Split */
+.rgb-effect {
+    text-shadow: 2px 0 rgba(255,0,0,0.3), -2px 0 rgba(0,0,255,0.3);
+}
+
+/* Scanlines */
+body::before {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none; z-index: 10;
+    background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 2px,
+        var(--scanline) 3px
+    );
+}
+
+/* ⛔ NO vignette on edges */
+
+/* Screen Flicker */
+@keyframes flicker {
+    0% { opacity: 0.97; }
+    5% { opacity: 0.95; }
+    10% { opacity: 0.9; }
+    15% { opacity: 0.95; }
+    100% { opacity: 0.97; }
+}
+body { animation: flicker 0.1s infinite; }
+
+/* =====================================================
+   LOADER
+===================================================== */
+#loader {
+    position: fixed; inset: 0;
+    background: #000;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 999;
+}
+.loader-text { font-size: 14px; margin-bottom: 5px; opacity: 0; animation: typeLine 0.1s forwards; }
+
+#progress-container {
+    width: 300px; height: 14px; border: 1px solid var(--green); margin-top: 20px; padding: 2px;
+}
+#progress-fill {
+    height: 100%; width: 0%; background: var(--green);
+    animation: loadBar 3s ease-out forwards;
+}
+
+@keyframes loadBar { to { width: 100%; } }
+@keyframes fadeOut { to { opacity: 0; pointer-events: none; } }
+
+/* =====================================================
+   MAIN LAYOUT
+===================================================== */
+
+#crt {
+    position: absolute; inset: 0;
+    display: grid;
+    grid-template-rows: 60px 1fr 40px;
+    grid-template-columns: 320px 1fr 320px;
+    opacity: 0;
+    animation: turnOn 1s ease-out 3.5s forwards;
+    transform: perspective(1000px) scale(1.02); /* Mild curve */
+}
+
+@keyframes turnOn {
+    0% { transform: scaleY(0.01) scaleX(0); opacity: 1; }
+    50% { transform: scaleY(0.01) scaleX(1); opacity: 1; }
+    100% { transform: scaleY(1) scaleX(1); opacity: 1; }
+}
+
+/* HEADER */
+header {
+    grid-column: 1 / 4;
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid var(--green);
+    background: rgba(0,20,0,0.8);
+    padding: 0 30px;
+}
+.logo { font-size: 24px; font-weight: bold; letter-spacing: 2px; }
+
+/* ASIDE PANELS */
+aside {
+    padding: 15px;
+    background: rgba(0,10,0,0.3);
+    border-right: 1px solid var(--dim);
+    display: flex; flex-direction: column; gap: 12px;
+    overflow: hidden; /* no scroll */
+}
+aside.right { border-right: none; border-left: 1px solid var(--dim); }
+
+.module {
+    border: 1px solid var(--green);
+    padding: 10px;
+    position: relative;
+    background: rgba(0,5,0,0.5);
+}
+.module h3 {
+    position: absolute; top: -9px; left: 8px;
+    background: var(--green); color: black;
+    font-size: 11px; padding: 0 4px; letter-spacing: 1px;
+}
+
+.module-body { font-size: 10px; }
+
+.scroll-text {
+    font-size: 10px;
+    line-height: 1.3;
+    opacity: 0.8;
+    height: 110px;
+    overflow: hidden;
+    white-space: pre-wrap;
+}
+
+/* =====================================================
+   MODEM / UPLINK BANKS
+===================================================== */
+.modem-grid {
+    display: grid; grid-template-rows: repeat(4, 1fr); gap: 6px; margin-top: 15px;
+}
+.modem-row {
+    display: flex; align-items: center; gap: 8px;
+}
+.modem-label { font-size: 9px; width: 30px; opacity: 0.7; }
+
+.led-strip {
+    flex: 1; display: flex; gap: 4px;
+    background: #000; padding: 3px; border: 1px solid #1a331a;
+}
+
+.led {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #112;
+    box-shadow: inset 1px 1px 2px rgba(255,255,255,0.1);
+    transition: background 0.05s, box-shadow 0.05s;
+}
+.led.green { background: #4af626; box-shadow: 0 0 8px #4af626, inset 1px 1px 3px white; }
+.led.red { background: #ff3333; box-shadow: 0 0 8px #ff3333, inset 1px 1px 3px white; }
+.led.amber { background: #ffcc00; box-shadow: 0 0 8px #ffcc00, inset 1px 1px 3px white; }
+
+/* =====================================================
+   MAIN CENTER — THERMAL HEATMAP + SIGINT RINGS
+===================================================== */
+main {
+    position: relative;
+    display: flex; justify-content: center; align-items: center;
+    background:
+        linear-gradient(rgba(74,246,38,0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(74,246,38,0.05) 1px, transparent 1px);
+    background-size: 40px 40px;
+}
+
+#heatmap-container {
+    position: relative;
+    width: 520px;
+    height: 340px;
+    border: 1px solid var(--green-dim);
+    background-color: #020708;
+    box-shadow: 0 0 25px rgba(74,246,38,0.15);
+    overflow: hidden;
+}
+
+#heatmap {
+    position: absolute;
+    inset: 0;
+    background-color: transparent;
+    transition: background-image 0.2s linear;
+}
+
+/* SIGINT rings */
+.sigint-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid rgba(74,246,38,0.8);
+    box-shadow: 0 0 10px rgba(74,246,38,0.8);
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0;
+    pointer-events: none;
+    animation: sigintPulse 1.8s ease-out forwards;
+}
+
+@keyframes sigintPulse {
+    0%   { transform: translate(-50%, -50%) scale(0.2); opacity: 0.9; }
+    60%  { transform: translate(-50%, -50%) scale(1.3); opacity: 0.4; }
+    100% { transform: translate(-50%, -50%) scale(1.7); opacity: 0; }
+}
+
+/* Crosshair */
+#crosshair {
+    position: fixed; width: 30px; height: 30px; pointer-events: none; z-index: 100;
+}
+#crosshair::before, #crosshair::after {
+    content: ''; position: absolute; background: var(--green);
+}
+#crosshair::before { top: 14px; left: 0; width: 30px; height: 2px; }
+#crosshair::after { left: 14px; top: 0; height: 30px; width: 2px; }
+
+/* Target Lock Box */
+.lock-box {
+    position: absolute; width: 60px; height: 60px;
+    border: 2px solid var(--alert);
+    box-shadow: 0 0 10px var(--alert);
+    animation: lockOn 0.5s ease-out;
+    display: flex; justify-content: center; align-items: start;
+    font-size: 10px; color: var(--alert); padding-top: 65px;
+    pointer-events: none;
+}
+@keyframes lockOn {
+    0% { transform: scale(2); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* =====================================================
+   FOOTER
+===================================================== */
+footer {
+    grid-column: 1 / 4;
+    border-top: 1px solid var(--green);
+    background: #000;
+    display: flex; align-items: center; padding: 0 20px; gap: 20px;
+    font-size: 12px;
+}
+.blink { animation: blinker 1s infinite; }
+@keyframes blinker { 50% { opacity: 0; } }
+
+/* simple bar chart */
+.bar-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 60px;
+}
+.bar {
+    flex: 1;
+    background: var(--green);
+    opacity: 0.8;
+    transition: height 0.2s;
+}
+
+/* memory map */
+.mem-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 2px;
+    margin-top: 6px;
+}
+.mem-cell {
+    width: 100%;
+    padding-top: 100%; /* square */
+    background: rgba(0,0,0,0.8);
+    border: 1px solid #144;
+}
+.mem-cell.used {
+    background: var(--green-dim);
+    box-shadow: 0 0 6px rgba(74,246,38,0.4);
+}
+
+/* satellite link list */
+#sat-list {
+    font-size: 10px;
+    line-height: 1.5;
+}
+
+/* crypto log */
+#crypto-log {
+    font-family: monospace;
+    font-size: 9px;
+    line-height: 1.25;
+    opacity: 0.85;
+    height: 110px;
+    overflow: hidden;
+    white-space: pre-wrap;
+}
+</style>
+</head>
+
+<body>
+
+<div id="loader">
+    <div class="loader-text">BIOS CHECK... OK</div>
+    <div class="loader-text" style="animation-delay: 0.5s">LOADING KERNEL... OK</div>
+    <div class="loader-text" style="animation-delay: 1.0s">DECRYPTING UPLINK...</div>
+    <div id="progress-container">
+        <div id="progress-fill"></div>
+    </div>
+</div>
+
+<div id="crt" class="rgb-effect">
+
+    <header>
+        <div class="logo">NORAD // STRATCOM</div>
+        <div id="clock">00:00:00 ZULU</div>
+    </header>
+
+    <!-- LEFT PANEL -->
+    <aside>
+        <!-- PACKET SNIFFER -->
+        <div class="module">
+            <h3>PACKET SNIFFER</h3>
+            <div class="module-body">
+                <div id="packet-log" class="scroll-text"></div>
+            </div>
+        </div>
+
+        <!-- CORE TEMP -->
+        <div class="module">
+            <h3>CORE TEMP</h3>
+            <div class="module-body">
+                <div id="cpu-bars" class="bar-row"></div>
+                <div style="font-size:9px; margin-top:4px; opacity:0.7;">
+                    CPU: <span id="cpu-temp">42</span>°C • GPU: <span id="gpu-temp">38</span>°C • SYS: <span id="sys-temp">35</span>°C
+                </div>
+            </div>
+        </div>
+
+        <!-- PROCESS TABLE -->
+        <div class="module">
+            <h3>PROCESS TABLE</h3>
+            <div class="module-body">
+                <div id="proc-log" class="scroll-text"></div>
+            </div>
+        </div>
+
+        <!-- MEMORY MAP -->
+        <div class="module">
+            <h3>MEMORY MAP</h3>
+            <div class="module-body">
+                <div style="font-size:9px; opacity:0.7;">
+                    RAM: <span id="ram-used">0</span>% • VRAM: <span id="vram-used">0</span>%
+                </div>
+                <div class="mem-grid" id="mem-grid"></div>
+            </div>
+        </div>
+
+        <!-- THREAT LEVEL -->
+        <div class="module">
+            <h3>THREAT LEVEL</h3>
+            <div class="module-body" style="text-align:center;">
+                <div style="font-size:28px; font-weight:bold; color:var(--green);" id="defcon-label">DEFCON 5</div>
+                <div style="font-size:10px; margin-top:4px;" id="threat-desc">GLOBAL POSTURE: STABLE</div>
+                <div style="margin-top:6px; height:10px; border:1px solid var(--green); position:relative;">
+                    <div id="threat-bar" style="position:absolute; left:0; top:0; bottom:0; width:20%; background:var(--green);"></div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- CENTER MAIN: HEATMAP -->
+    <main id="main-view">
+        <div id="heatmap-container">
+            <div id="heatmap"></div>
+        </div>
+    </main>
+
+    <!-- RIGHT PANEL -->
+    <aside class="right">
+
+        <!-- UPLINK BANKS -->
+        <div class="module">
+            <h3>UPLINK BANKS</h3>
+            <div class="module-body">
+                <div class="modem-grid">
+                    <div class="modem-row">
+                        <div class="modem-label">PRI</div>
+                        <div class="led-strip" id="strip1"></div>
+                    </div>
+                    <div class="modem-row">
+                        <div class="modem-label">SEC</div>
+                        <div class="led-strip" id="strip2"></div>
+                    </div>
+                    <div class="modem-row">
+                        <div class="modem-label">SAT</div>
+                        <div class="led-strip" id="strip3"></div>
+                    </div>
+                    <div class="modem-row">
+                        <div class="modem-label">ENC</div>
+                        <div class="led-strip" id="strip4"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- GEO-TRACKING -->
+        <div class="module">
+            <h3>GEO-TRACKING</h3>
+            <div class="module-body">
+                <div id="geo" style="font-size: 11px; line-height: 1.6;">Acquiring Signal...</div>
+            </div>
+        </div>
+        
+        <!-- SPECTRUM -->
+        <div class="module">
+            <h3>SPECTRUM</h3>
+            <div class="module-body">
+                <div style="height: 45px; display: flex; align-items: flex-end; gap: 2px;" id="spectrum"></div>
+            </div>
+        </div>
+
+        <!-- SATELLITE LINKS -->
+        <div class="module">
+            <h3>SATELLITE LINKS</h3>
+            <div class="module-body">
+                <div id="sat-list"></div>
+            </div>
+        </div>
+
+        <!-- CRYPTOGRAPHIC ENGINE -->
+        <div class="module">
+            <h3>CRYPTOGRAPHIC ENGINE</h3>
+            <div class="module-body">
+                <div id="crypto-log"></div>
+            </div>
+        </div>
+    </aside>
+
+    <footer>
+        <div style="width: 120px;">SYSTEM: ONLINE</div>
+        <div style="flex:1;">> <span id="typing">AWAITING INPUT...</span><span class="blink">_</span></div>
+        <div>SECURE CHANNEL</div>
+    </footer>
+</div>
+
+<div id="crosshair"></div>
+
+<script>
+// 1. BOOT SEQUENCE FADE
+setTimeout(() => {
+    document.getElementById("loader").style.animation = "fadeOut 1s forwards";
+}, 3200);
+
+// 2. CLOCK
+setInterval(() => {
+    document.getElementById("clock").innerText = new Date().toISOString().split("T")[1].split(".")[0] + " ZULU";
+}, 1000);
+
+// 3. CROSSHAIR TRACKING
+const cross = document.getElementById("crosshair");
+document.addEventListener("mousemove", e => {
+    cross.style.left = (e.clientX - 15) + "px";
+    cross.style.top = (e.clientY - 15) + "px";
+});
+
+// 4. CLICK TO LOCK (TARGETING SYSTEM)
+document.addEventListener("mousedown", (e) => {
+    const lock = document.createElement("div");
+    lock.className = "lock-box";
+    lock.style.left = (e.clientX - 30) + "px";
+    lock.style.top = (e.clientY - 30) + "px";
+    lock.innerText = "LOCKED";
+    document.body.appendChild(lock);
+    setTimeout(() => lock.remove(), 800);
+});
+
+// 5. PACKET LOG
+const pLog = document.getElementById("packet-log");
+setInterval(()=>{
+    let ip = `192.168.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}`;
+    let actions = ["ACK", "SYN", "FIN", "RST"];
+    let act = actions[Math.floor(Math.random() * actions.length)];
+    let line = `[${new Date().toLocaleTimeString()}] ${ip} > ${act} > PORT ${Math.floor(Math.random()*9999)}\n`;
+    pLog.prepend(document.createTextNode(line));
+    if(pLog.textContent.length > 800) {
+        pLog.textContent = pLog.textContent.slice(0, 800);
+    }
+}, 200);
+
+// 6. CPU BARS + TEMPS
+const bars = document.getElementById("cpu-bars");
+for(let i=0; i<15; i++){
+    let b = document.createElement("div");
+    b.className = "bar";
+    b.style.height = "20%";
+    bars.appendChild(b);
+}
+setInterval(()=>{
+    let cpuT = 35 + Math.random()*35;
+    let gpuT = 30 + Math.random()*30;
+    let sysT = 30 + Math.random()*20;
+    document.getElementById("cpu-temp").textContent = cpuT.toFixed(1);
+    document.getElementById("gpu-temp").textContent = gpuT.toFixed(1);
+    document.getElementById("sys-temp").textContent = sysT.toFixed(1);
+    [...bars.children].forEach(b => b.style.height = (10 + Math.random()*90)+"%");
+}, 250);
+
+// 7. PROCESS TABLE
+const procLog = document.getElementById("proc-log");
+const procNames = ["radar_scan", "uplinkd", "crypto_daemon", "geo_solve", "sigint", "telemetry", "stratctl", "norad_watch"];
+function updateProcs(){
+    let lines = [];
+    for(let i=0;i<8;i++){
+        let pid = (1000 + Math.floor(Math.random()*8000)).toString().padStart(5," ");
+        let cpu = (Math.random()*45).toFixed(1).padStart(4," ");
+        let name = procNames[Math.floor(Math.random()*procNames.length)];
+        lines.push(`${pid}  ${cpu}%  root      /bin/${name}`);
+    }
+    procLog.textContent = lines.join("\n");
+}
+setInterval(updateProcs, 800);
+updateProcs();
+
+// 8. MEMORY MAP
+const memGrid = document.getElementById("mem-grid");
+for(let i=0;i<32;i++){
+    let c = document.createElement("div");
+    c.className = "mem-cell";
+    memGrid.appendChild(c);
+}
+function updateMem(){
+    let used = Math.floor(30 + Math.random()*60); // 30–90%
+    let vused = Math.floor(20 + Math.random()*70);
+    document.getElementById("ram-used").textContent = used;
+    document.getElementById("vram-used").textContent = vused;
+    const cells = [...memGrid.children];
+    cells.forEach((c,i)=>{
+        let threshold = used / 100 * cells.length;
+        c.classList.toggle("used", i < threshold);
+    });
+}
+setInterval(updateMem, 1000);
+updateMem();
+
+// 9. THREAT LEVEL
+const defconLabel = document.getElementById("defcon-label");
+const threatDesc = document.getElementById("threat-desc");
+const threatBar = document.getElementById("threat-bar");
+const threatStates = [
+    {label:"DEFCON 5", desc:"GLOBAL POSTURE: STABLE", width:20},
+    {label:"DEFCON 4", desc:"INTEL: ELEVATED ACTIVITY", width:40},
+    {label:"DEFCON 3", desc:"FORCES READINESS INCREASED", width:60},
+    {label:"DEFCON 2", desc:"NEXT STEP TO NUCLEAR WAR", width:80},
+    {label:"DEFCON 1", desc:"NUCLEAR WAR IMMINENT", width:100}
+];
+let threatIndex = 0;
+setInterval(()=>{
+    threatIndex = (threatIndex + 1) % threatStates.length;
+    const s = threatStates[threatIndex];
+    defconLabel.textContent = s.label;
+    threatDesc.textContent = s.desc;
+    threatBar.style.width = s.width + "%";
+}, 9000);
+
+// 10. REALISTIC MODEM LIGHTS
+function createLeds(stripId, count) {
+    const strip = document.getElementById(stripId);
+    for(let i=0; i<count; i++){
+        let d = document.createElement("div");
+        d.className = "led";
+        strip.appendChild(d);
+    }
+}
+['strip1','strip2','strip3','strip4'].forEach(id => createLeds(id, 8));
+
+function flickerModems() {
+    document.querySelectorAll('.led').forEach(led => {
+        const r = Math.random();
+        if(r > 0.8){
+            let colorRoll = Math.random();
+            let color = colorRoll > 0.85 ? (Math.random()>0.5 ? 'red' : 'amber') : 'green';
+            led.className = `led ${color}`;
+        } else if (r < 0.15) {
+            led.className = 'led'; // off
+        }
+    });
+}
+setInterval(flickerModems, 90);
+
+// 11. GEO DATA
+setInterval(()=>{
+    document.getElementById("geo").innerHTML = 
+        `LAT: ${(34+Math.random()*0.01).toFixed(4)} N<br>`+
+        `LON: ${(118+Math.random()*0.01).toFixed(4)} W<br>`+
+        `ALT: ${Math.floor(10000 + Math.random()*500)} FT<br>` +
+        `LOCK: ${Math.random() > 0.2 ? 'YES' : 'SEARCHING'}`;
+}, 800);
+
+// 12. SPECTRUM ANALYZER
+const spec = document.getElementById("spectrum");
+for(let i=0; i<24; i++) {
+    let s = document.createElement("div");
+    s.style.flex = "1";
+    s.style.background = "#4af626";
+    s.style.opacity = "0.5";
+    spec.appendChild(s);
+}
+setInterval(() => {
+    [...spec.children].forEach(s => s.style.height = (10+Math.random()*90)+"%");
+}, 90);
+
+// 13. SATELLITE LINK STATUS
+const satList = document.getElementById("sat-list");
+const satellites = [
+    "SAT-01 POLAR",
+    "SAT-03 GEO-SYNC",
+    "SAT-07 LEO",
+    "SAT-12 DRONE RELAY",
+    "SAT-19 DEEP SPACE"
+];
+function updateSatLinks(){
+    let out = [];
+    satellites.forEach(name=>{
+        const r = Math.random();
+        let status, color;
+        if(r < 0.1)      { status="LOST";     color="red"; }
+        else if(r < 0.3) { status="DEGRADED"; color="amber"; }
+        else             { status="LOCKED";   color="green"; }
+        const sym = "●";
+        const col = color==="green"?"#4af626":color==="amber"?"#ffcc00":"#ff3333";
+        out.push(`<span style="color:${col}">${sym}</span> ${name} – ${status}`);
+    });
+    satList.innerHTML = out.join("<br>");
+}
+setInterval(updateSatLinks, 2000);
+updateSatLinks();
+
+// 14. CRYPTOGRAPHIC ENGINE
+const cryptoLog = document.getElementById("crypto-log");
+const hexChars = "0123456789ABCDEF";
+function randHex(len){
+    let s=""; for(let i=0;i<len;i++) s+=hexChars[Math.floor(Math.random()*16)];
+    return s;
+}
+function pushCryptoLine(){
+    const line = `${randHex(8)}  ${randHex(8)}  ${randHex(16)}  CRC:${randHex(4)}\n`;
+    cryptoLog.textContent = line + cryptoLog.textContent;
+    if(cryptoLog.textContent.length > 900){
+        cryptoLog.textContent = cryptoLog.textContent.slice(0,900);
+    }
+}
+setInterval(pushCryptoLine, 120);
+
+// 15. Footer fake typing
+const typingSpan = document.getElementById("typing");
+const prompts = [
+    "AWAITING INPUT...",
+    "MONITORING GLOBAL CHANNELS...",
+    "IDLE • PRESSURE: NOMINAL...",
+    "SCANNING INBOUND SIGNATURES..."
+];
+let tpIndex = 0;
+setInterval(()=>{
+    tpIndex = (tpIndex+1)%prompts.length;
+    typingSpan.textContent = prompts[tpIndex];
+}, 7000);
+
+// 16. HEATMAP + SIGINT RINGS (RANDOMIZED, CENTRAL 80%)
+const heatmap = document.getElementById("heatmap");
+const heatmapContainer = document.getElementById("heatmap-container");
+
+// hotspots with drifting positions and intensities
+let hotspots = [];
+const HOTSPOT_COUNT = 7;
+
+for (let i = 0; i < HOTSPOT_COUNT; i++) {
+    hotspots.push({
+        x: 10 + Math.random()*80,   // keep within 10–90% horizontally
+        y: 10 + Math.random()*80,   // and vertically
+        dx: (Math.random()-0.5)*0.4,
+        dy: (Math.random()-0.5)*0.4,
+        base: 0.25 + Math.random()*0.55,  // base intensity
+        phase: Math.random()*Math.PI*2,
+        radius: 25 + Math.random()*20,    // base radius in %
+        paletteShift: Math.random(),      // how warm vs green
+        current: 0.5
+    });
+}
+
+function updateHeatmap(){
+    const t = Date.now() / 1000;
+    hotspots.forEach(h => {
+        // drift
+        h.x += h.dx * 0.35;
+        h.y += h.dy * 0.35;
+
+        // bounce within 10–90%
+        if (h.x < 10 || h.x > 90) {
+            h.dx *= -1;
+            h.x = Math.max(10, Math.min(90, h.x));
+        }
+        if (h.y < 10 || h.y > 90) {
+            h.dy *= -1;
+            h.y = Math.max(10, Math.min(90, h.y));
+        }
+
+        // occasional teleports to break long-term patterns
+        if (Math.random() < 0.002) {
+            h.x = 10 + Math.random()*80;
+            h.y = 10 + Math.random()*80;
+            h.dx = (Math.random()-0.5)*0.4;
+            h.dy = (Math.random()-0.5)*0.4;
+        }
+
+        // adjust palette bias occasionally
+        if (Math.random() < 0.01) {
+            h.paletteShift = Math.random();
+        }
+
+        // intensity: mix of sin pulse + jitter
+        const sinPulse = Math.sin(t*1.3 + h.phase);
+        const jitter = (Math.random()-0.5)*0.15;
+        const raw = h.base + 0.35*sinPulse + jitter;
+        h.current = Math.max(0.15, Math.min(1.25, raw));
+    });
+
+    const layers = hotspots.map(h => {
+        const ac = h.current;
+        const mid = ac * 0.55;
+        const outer = ac * 0.2;
+
+        // palette mixing: more red vs more green
+        const redCore = 180 + Math.floor(h.paletteShift*75);   // 180–255
+        const greenCore = 60 + Math.floor((1-h.paletteShift)*140); // 60–200
+        
+        const rCore = redCore;
+        const gCore = greenCore;
+        const bCore = 0;
+
+        const radiusInner = h.radius;
+        const radiusMid = h.radius + 12;
+        const radiusOuter = h.radius + 32;
+
+        return `
+            radial-gradient(
+                circle at ${h.x}% ${h.y}%,
+                rgba(${rCore}, ${gCore}, ${bCore}, ${ac.toFixed(3)}) 0%,
+                rgba(255, 0, 0, ${mid.toFixed(3)}) ${radiusInner}%,
+                rgba(74, 246, 38, ${outer.toFixed(3)}) ${radiusMid}%,
+                rgba(0, 0, 0, 0) ${radiusOuter}%
+            )
+        `;
+    });
+
+    // subtle underlayer so center is always alive
+    const underLayer = `
+        radial-gradient(
+            circle at 50% 50%,
+            rgba(10, 80, 10, 0.35) 0%,
+            rgba(0, 0, 0, 0.0) 70%
+        )
+    `;
+
+    heatmap.style.backgroundImage = underLayer + "," + layers.join(",");
+}
+setInterval(updateHeatmap, 90);
+updateHeatmap();
+
+// SIGINT activity rings radiating from hotspots (randomized)
+function spawnSigintRing(){
+    const h = hotspots[Math.floor(Math.random()*hotspots.length)];
+    const ring = document.createElement("div");
+    ring.className = "sigint-ring";
+
+    const rect = heatmapContainer.getBoundingClientRect();
+
+    // convert hotspot % to px and add slight random offset
+    const offsetX = (Math.random()-0.5)*0.08 * rect.width;
+    const offsetY = (Math.random()-0.5)*0.08 * rect.height;
+
+    const left = (h.x/100) * rect.width + offsetX;
+    const top  = (h.y/100) * rect.height + offsetY;
+
+    ring.style.left = left + "px";
+    ring.style.top  = top + "px";
+
+    // random size and duration to break pattern
+    const baseSize = 50 + Math.random()*80; // px
+    ring.style.width = baseSize + "px";
+    ring.style.height = baseSize + "px";
+    ring.style.animationDuration = (1.2 + Math.random()*1.4).toFixed(2) + "s";
+
+    // random brightness
+    const alpha = 0.45 + Math.random()*0.4;
+    ring.style.borderColor = `rgba(74, 246, 38, ${alpha})`;
+    ring.style.boxShadow = `0 0 10px rgba(74, 246, 38, ${alpha})`;
+
+    heatmapContainer.appendChild(ring);
+    setTimeout(()=> ring.remove(), 2200);
+}
+setInterval(()=>{
+    if (Math.random() < 0.85) spawnSigintRing();
+}, 700);
+</script>
+</body>
+</html>
