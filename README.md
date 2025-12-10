@@ -1,2 +1,1 @@
-# Screen-Monitor-Candy-Like-in-movie-
-A cinematic NORAD-style surveillance terminal UI in pure HTML/CSS/JS
+A fully animated NORAD/STRATCOM-inspired surveillance interface built with pure HTML, CSS, and JavaScript. Includes a thermal SIGINT heatmap engine, random modem activity banks, packet sniff logs, process tables, memory maps, satscan status modules, and a cinematic bootloader. Designed for realism, aesthetics, and display dashboards.
